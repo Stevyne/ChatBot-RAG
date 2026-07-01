@@ -1,0 +1,5 @@
+question,expected_source,expected_page,expected_keywords,expected_answer,is_out_of_scope
+"Quel est l'objectif principal du document ?","nom_du_document.pdf",1,"objectif; procédure; demande","Réponse attendue à compléter",false
+"Quels documents doivent être fournis ?","nom_du_document.pdf",2,"pièce d'identité; justificatif; formulaire","Réponse attendue à compléter",false
+"Quel est le délai indiqué dans le document ?","nom_du_document.pdf",3,"délai; jours; demande","Réponse attendue à compléter",false
+"Comment demander un visa pour le Canada ?","","","","Cette information n'est pas dans le corpus",true

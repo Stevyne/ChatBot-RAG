@@ -1,0 +1,71 @@
+# Environnements Python
+.venv/
+venv/
+env/
+ENV/
+
+# Fichiers Python générés
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Variables d'environnement et secrets
+.env
+.env.*
+!.env.example
+
+# Données locales et documents sensibles
+# Les PDF juridiques/administratifs peuvent contenir des données confidentielles.
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Fichiers d'évaluation générés localement
+reports/evaluation_results_*.csv
+reports/evaluation_summary_*.md
+
+# Bases, caches et fichiers temporaires
+vectorstore/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.tmp
+*.bak
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE et éditeurs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Windows / macOS / Linux
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Tests et couverture
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Packages et builds
+build/
+dist/
+*.egg-info/
+
+# Modèles locaux ou fichiers volumineux éventuels
+models/
+*.bin
+*.gguf
+*.safetensors
