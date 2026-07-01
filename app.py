@@ -9,6 +9,7 @@ from src.config import LLM_PROVIDER, RAW_DATA_DIR, TOP_K
 from src.rag_pipeline import answer_question, index_documents
 from src.vector_store import count_documents, reset_vectorstore
 from src.evaluation import run_evaluation, save_evaluation_report, summarize_results
+from src.excel_exporter import export_extracted_data_to_excel
 
 st.set_page_config(
     page_title="Chatbot RAG juridique et administratif",

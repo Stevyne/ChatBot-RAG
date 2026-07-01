@@ -1,4 +1,9 @@
-"""Découpage des textes en chunks avec chevauchement."""
+"""Découpage des textes en chunks avec chevauchement.
+
+Correction importante : lorsque la fin du texte est atteinte, la boucle doit
+s'arrêter. Sinon, avec un chevauchement non nul, le dernier morceau peut être
+répété indéfiniment et provoquer une explosion de la RAM.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -7,10 +12,23 @@ from .config import CHUNK_OVERLAP, CHUNK_SIZE
 
 
 def split_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
-    """Découpe un texte en morceaux de taille fixe avec chevauchement."""
+    """Découpe un texte en morceaux de taille fixe avec chevauchement.
+
+    Args:
+        text: texte à découper.
+        chunk_size: taille maximale d'un chunk en caractères.
+        overlap: nombre de caractères repris entre deux chunks.
+
+    Returns:
+        Liste des chunks.
+    """
     text = text.strip()
     if not text:
         return []
+    if chunk_size <= 0:
+        raise ValueError("chunk_size doit être positif")
+    if overlap < 0:
+        raise ValueError("overlap ne peut pas être négatif")
     if chunk_size <= overlap:
         raise ValueError("chunk_size doit être supérieur à overlap")
 
@@ -24,16 +42,24 @@ def split_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
 
         # Essaie de ne pas couper brutalement au milieu d'une phrase si possible.
         if end < text_length:
-            last_period = max(chunk.rfind(". "), chunk.rfind("\n"), chunk.rfind("; "))
-            if last_period > int(chunk_size * 0.55):
-                end = start + last_period + 1
+            last_separator = max(chunk.rfind(". "), chunk.rfind("\n"), chunk.rfind("; "))
+            if last_separator > int(chunk_size * 0.55):
+                end = start + last_separator + 1
                 chunk = text[start:end].strip()
 
         if chunk:
             chunks.append(chunk)
 
-        start = max(end - overlap, end) if overlap == 0 else end - overlap
-        if start <= 0:
+        # IMPORTANT : si la fin est atteinte, on arrête.
+        # Sans ce break, start=end-overlap peut rester inférieur à text_length
+        # et répéter le dernier chunk indéfiniment.
+        if end >= text_length:
+            break
+
+        start = max(end - overlap, 0) if overlap > 0 else end
+
+        # Sécurité supplémentaire contre les boucles bloquées.
+        if chunks and start >= end:
             start = end
 
     return chunks

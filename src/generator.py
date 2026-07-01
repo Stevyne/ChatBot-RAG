@@ -76,8 +76,8 @@ def generate_with_ollama(prompt: str) -> str:
             "temperature": 0.1,
             "top_p": 0.85,
             "repeat_penalty": 1.1,
-            "num_ctx": 4096,
-            "num_predict": 700,
+            "num_ctx": 2048,
+            "num_predict": 350,
         },
     }
     try:

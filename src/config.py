@@ -18,9 +18,9 @@ EMBEDDING_MODEL = os.getenv(
     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
 )
 
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
-TOP_K = int(os.getenv("TOP_K", "4"))
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "700"))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))
+TOP_K = int(os.getenv("TOP_K", "3"))
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "extractive").lower()
 
@@ -41,6 +41,13 @@ EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "384"))
 # Seuil indicatif. Avec Chroma, la distance dépend de la métrique utilisée.
 # Dans la V1, on l'utilise surtout comme information, pas comme blocage strict.
 MIN_RELEVANCE_SCORE = float(os.getenv("MIN_RELEVANCE_SCORE", "0.0"))
+
+# Configuration OCR pour les PDF scannés
+ENABLE_OCR = os.getenv("ENABLE_OCR", "true").lower() in {"1", "true", "yes", "oui"}
+OCR_LANGUAGE = os.getenv("OCR_LANGUAGE", "fra")
+OCR_DPI = int(os.getenv("OCR_DPI", "150"))
+OCR_MIN_TEXT_LENGTH = int(os.getenv("OCR_MIN_TEXT_LENGTH", "80"))
+TESSERACT_CMD = os.getenv("TESSERACT_CMD", "")
 
 for directory in [RAW_DATA_DIR, PROCESSED_DATA_DIR, VECTORSTORE_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
