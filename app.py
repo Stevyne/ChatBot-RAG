@@ -155,3 +155,35 @@ with st.expander("Lancer une évaluation à partir d'un fichier CSV"):
                 st.write(f"Résumé Markdown : `{report_paths['summary']}`")
             except Exception as exc:
                 st.error(f"Erreur pendant l'évaluation : {exc}")
+
+st.divider()
+st.subheader("4. Exporter les données extraites vers Excel")
+
+with st.expander("Créer un fichier Excel à partir des données stockées dans PostgreSQL"):
+    st.write(
+        "Cette fonction exporte les documents importés, les chunks extraits et des statistiques "
+        "dans un fichier `.xlsx`. Les embeddings complets ne sont pas inclus par défaut pour garder "
+        "le fichier lisible."
+    )
+    include_embeddings_excel = st.checkbox(
+        "Inclure les embeddings complets dans Excel, non recommandé sauf petit corpus",
+        value=False,
+    )
+
+    if st.button("📄 Exporter vers Excel"):
+        if count_documents() == 0:
+            st.warning("Aucun chunk n'est actuellement indexé. Importez et indexez d'abord des PDF.")
+        else:
+            with st.spinner("Création du fichier Excel..."):
+                try:
+                    excel_path = export_extracted_data_to_excel(include_embeddings=include_embeddings_excel)
+                    st.success(f"Fichier Excel créé : {excel_path}")
+                    with open(excel_path, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Télécharger le fichier Excel",
+                            data=f,
+                            file_name=excel_path.name,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
+                except Exception as exc:
+                    st.error(f"Erreur pendant l'export Excel : {exc}")

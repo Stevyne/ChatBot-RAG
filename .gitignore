@@ -69,3 +69,11 @@ models/
 *.bin
 *.gguf
 *.safetensors
+
+documents/
+memory.json
+chroma_db
+
+data/exports/
+
+agent_git.py
