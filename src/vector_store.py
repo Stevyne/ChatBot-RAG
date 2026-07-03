@@ -198,3 +198,71 @@ def count_documents() -> int:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM chunks;")
             return int(cur.fetchone()[0])
+
+
+def list_indexed_documents() -> list[dict[str, Any]]:
+    """Retourne la liste des documents indexés."""
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    d.id,
+                    d.filename,
+                    d.file_path,
+                    d.created_at,
+                    COUNT(c.id) AS chunks_count,
+                    COALESCE(MAX(c.page), 0) AS pages_count
+                FROM documents d
+                LEFT JOIN chunks c ON c.document_id = d.id
+                GROUP BY d.id, d.filename, d.file_path, d.created_at
+                ORDER BY d.filename;
+                """
+            )
+            rows = cur.fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "filename": row[1],
+            "file_path": row[2],
+            "created_at": row[3],
+            "chunks_count": int(row[4] or 0),
+            "pages_count": int(row[5] or 0),
+        }
+        for row in rows
+    ]
+
+
+def get_chunks_by_source(source: str) -> list[dict[str, Any]]:
+    """Retourne tous les chunks d'un document donné, ordonnés par page puis chunk."""
+    init_db()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, content, source, page, chunk_id, metadata
+                FROM chunks
+                WHERE source = %s
+                ORDER BY page, chunk_id;
+                """,
+                (source,),
+            )
+            rows = cur.fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "text": row[1],
+            "metadata": {
+                **(row[5] or {}),
+                "source": row[2],
+                "page": row[3],
+                "chunk_id": row[4],
+            },
+            "score": 1.0,
+            "distance": 0.0,
+        }
+        for row in rows
+    ]

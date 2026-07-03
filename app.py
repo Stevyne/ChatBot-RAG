@@ -10,6 +10,9 @@ from src.rag_pipeline import answer_question, index_documents
 from src.vector_store import count_documents, reset_vectorstore
 from src.evaluation import run_evaluation, save_evaluation_report, summarize_results
 from src.excel_exporter import export_extracted_data_to_excel
+from src.answer_exporter import export_answers_to_excel
+from src.invoice_extractor import export_invoice_fields_to_excel
+from src.vector_store import list_indexed_documents
 
 st.set_page_config(
     page_title="Chatbot RAG juridique et administratif",
@@ -188,3 +191,117 @@ with st.expander("Créer un fichier Excel à partir des données stockées dans 
                         )
                 except Exception as exc:
                     st.error(f"Erreur pendant l'export Excel : {exc}")
+
+st.divider()
+st.subheader("5. Extraire des réponses et les exporter vers Excel")
+
+with st.expander("Exemple : extraire les noms des destinataires de factures"):
+    st.write(
+        "Cette fonction pose la même question à chaque document indexé et exporte les réponses "
+        "dans un fichier Excel. Exemple de question : `Quel est le nom de la personne à qui la facture est adressée ?`"
+    )
+
+    extraction_question = st.text_input(
+        "Question d'extraction",
+        value="Quel est le nom de la personne à qui la facture est adressée ?",
+    )
+
+    try:
+        indexed_docs = list_indexed_documents()
+    except Exception:
+        indexed_docs = []
+
+    doc_names = [doc["filename"] for doc in indexed_docs]
+    selected_docs = st.multiselect(
+        "Documents à traiter, laisser vide pour tous les documents",
+        options=doc_names,
+        default=[],
+    )
+
+    max_context_chars = st.number_input(
+        "Taille maximale du contexte par document",
+        min_value=1000,
+        max_value=20000,
+        value=8000,
+        step=1000,
+        help="Réduire cette valeur si la RAM est limitée.",
+    )
+
+    if st.button("📊 Extraire les réponses vers Excel"):
+        if count_documents() == 0:
+            st.warning("Aucun document n'est indexé. Importez et indexez d'abord des PDF.")
+        elif not extraction_question.strip():
+            st.warning("Veuillez saisir une question d'extraction.")
+        else:
+            with st.spinner("Extraction des réponses document par document..."):
+                try:
+                    excel_path = export_answers_to_excel(
+                        question=extraction_question.strip(),
+                        selected_sources=selected_docs if selected_docs else None,
+                        max_context_chars=int(max_context_chars),
+                    )
+                    st.success(f"Fichier Excel créé : {excel_path}")
+                    with open(excel_path, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Télécharger les réponses Excel",
+                            data=f,
+                            file_name=excel_path.name,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
+                except Exception as exc:
+                    st.error(f"Erreur pendant l'extraction des réponses : {exc}")
+
+
+st.divider()
+st.subheader("6. Mode factures : extraction structurée vers Excel")
+
+with st.expander("Extraire automatiquement les champs importants des factures"):
+    st.write(
+        "Ce mode traite chaque document comme une facture et extrait automatiquement : "
+        "destinataire, adresse, émetteur, numéro de facture, date, montants et devise."
+    )
+
+    try:
+        invoice_docs = list_indexed_documents()
+    except Exception:
+        invoice_docs = []
+
+    invoice_doc_names = [doc["filename"] for doc in invoice_docs]
+    selected_invoice_docs = st.multiselect(
+        "Factures à traiter, laisser vide pour toutes les factures",
+        options=invoice_doc_names,
+        default=[],
+        key="invoice_docs_multiselect",
+    )
+
+    invoice_max_context_chars = st.number_input(
+        "Taille maximale du contexte par facture",
+        min_value=2000,
+        max_value=30000,
+        value=12000,
+        step=1000,
+        key="invoice_max_context_chars",
+        help="Réduire cette valeur si la RAM est limitée. Augmenter si les factures ont plusieurs pages.",
+    )
+
+    if st.button("🧾 Extraire les champs des factures vers Excel"):
+        if count_documents() == 0:
+            st.warning("Aucun document n'est indexé. Importez et indexez d'abord des factures PDF.")
+        else:
+            with st.spinner("Extraction structurée des factures en cours..."):
+                try:
+                    invoice_excel_path = export_invoice_fields_to_excel(
+                        selected_sources=selected_invoice_docs if selected_invoice_docs else None,
+                        max_context_chars=int(invoice_max_context_chars),
+                    )
+                    st.success(f"Fichier Excel créé : {invoice_excel_path}")
+                    with open(invoice_excel_path, "rb") as f:
+                        st.download_button(
+                            label="⬇️ Télécharger l'extraction des factures",
+                            data=f,
+                            file_name=invoice_excel_path.name,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
+                except Exception as exc:
+                    st.error(f"Erreur pendant l'extraction des factures : {exc}")
+
