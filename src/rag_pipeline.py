@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import CHUNK_OVERLAP, CHUNK_SIZE, TOP_K
-from .document_loader import load_pdfs
+from .document_loader import load_documents
 from .generator import build_prompt, generate_answer
 from .retriever import extract_sources, format_context, retrieve
 from .text_splitter import split_documents
@@ -13,8 +13,8 @@ from .vector_store import add_documents, count_documents
 
 
 def index_documents(file_paths: list[str | Path]) -> dict[str, Any]:
-    """Extrait, découpe et indexe une liste de PDF."""
-    pages = load_pdfs(file_paths)
+    """Extrait, découpe et indexe une liste de PDF ou d'images scannées."""
+    pages = load_documents(file_paths)
     chunks = split_documents(pages, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
     indexed_count = add_documents(chunks)
 

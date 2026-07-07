@@ -1,10 +1,10 @@
-"""Extraction spécialisée de champs de factures vers Excel.
+"""Extraction structurée et universelle de champs pour tout type de facture ou document.
 
-Ce module traite chaque document indexé comme une facture et extrait plusieurs
-champs structurés : destinataire, adresse, numéro, date, montants, etc.
-
-Il utilise le contexte OCR/indexé déjà stocké dans PostgreSQL et un modèle local
-Ollama/OpenAI selon la configuration du projet.
+Ce module permet d'analyser des documents scannés ou textuels de formats très hétérogènes.
+Il offre deux modes d'extraction :
+1. Mode standard / personnalisé : extraction sur un schéma de colonnes défini par l'utilisateur.
+2. Mode universel (Auto-découverte) : le modèle extrait librement toutes les paires clé-valeur
+   pertinentes trouvées dans le document, s'adaptant ainsi à n'importe quelle facture (Français & Malagasy).
 """
 from __future__ import annotations
 
@@ -47,10 +47,13 @@ def limit_chunks_by_context_size(chunks: list[dict[str, Any]], max_chars: int = 
     return selected
 
 
-def build_invoice_extraction_prompt(context: str) -> str:
-    """Construit un prompt spécialisé pour extraire des champs de facture en JSON."""
+def build_custom_extraction_prompt(fields: list[str], context: str) -> str:
+    """Construit un prompt spécialisé pour extraire une liste personnalisée de champs."""
+    fields_list = "\n".join(f"- {f}" for f in fields)
+    json_template = ",\n  ".join(f'"{f}": "..."' for f in fields)
+
     return f"""
-Tu es un système d'extraction d'informations dans des factures scannées.
+Tu es un système d'extraction d'informations dans des factures et documents scannés en Français et en Malagasy.
 
 Objectif : extraire les champs demandés à partir du contexte OCR fourni.
 
@@ -58,38 +61,18 @@ Règles strictes :
 1. Réponds uniquement avec un objet JSON valide.
 2. N'ajoute aucun texte avant ou après le JSON.
 3. Si une information est absente ou incertaine, mets exactement "Non trouvé".
-4. N'invente jamais une valeur.
-5. Le destinataire est la personne, entreprise ou organisation à qui la facture est adressée, souvent proche de mentions comme "Client", "Facturé à", "À l'attention de", "Bill to", "Destinataire".
-6. L'émetteur est l'entreprise ou la personne qui a émis la facture.
-7. Conserve les montants avec leur format d'origine si possible.
+4. N'invente jamais une valeur absente du texte.
+5. Tiens compte du vocabulaire malgache (ex: Anarana = Nom, Daty = Date, Vidiny = Prix, Ariary = Devise MGA).
 
 Champs à extraire :
-- destinataire_nom
-- destinataire_adresse
-- emetteur_nom
-- numero_facture
-- date_facture
-- montant_ht
-- montant_tva
-- montant_ttc
-- devise
-- commentaire
+{fields_list}
 
-Format JSON obligatoire :
+Format JSON attendu :
 {{
-  "destinataire_nom": "...",
-  "destinataire_adresse": "...",
-  "emetteur_nom": "...",
-  "numero_facture": "...",
-  "date_facture": "...",
-  "montant_ht": "...",
-  "montant_tva": "...",
-  "montant_ttc": "...",
-  "devise": "...",
-  "commentaire": "..."
+  {json_template}
 }}
 
-Contexte OCR/documentaire :
+Contexte documentaire :
 --------------------------
 {context}
 --------------------------
@@ -98,11 +81,32 @@ JSON :
 """.strip()
 
 
+def build_universal_extraction_prompt(context: str) -> str:
+    """Construit un prompt universel qui découvre automatiquement les champs importants de toute facture."""
+    return f"""
+Tu es un expert en analyse documentaire et extraction structurée de factures (en Français et en Malagasy / Malgache).
+
+Objectif : analyser le contexte documentaire ci-dessous et extraire TOUTES les informations financières, administratives et d'identification pertinentes sous la forme d'un objet JSON plat (clé-valeur).
+
+Règles strictes :
+1. Réponds STRICTEMENT par un objet JSON valide, sans aucun texte autour.
+2. N'invente aucune information non présente.
+3. Utilise des clés claires en snake_case (ex: emetteur, destinataire, numero_facture, date_facture, montant_ht, montant_ttc, devise, nif, stat...).
+4. Comprends les mentions malgaches (ex: Faktiora, Anarana, Mpanjifa, Tompony, Daty, Vidiny, Ariary / Ar / MGA, NIF, STAT, Kaominina, Fokontany...).
+
+Contexte de la facture / document :
+--------------------------
+{context}
+--------------------------
+
+Objet JSON complet :
+""".strip()
+
+
 def extract_json_object(text: str) -> dict[str, Any]:
-    """Extrait et parse le premier objet JSON trouvé dans une réponse de modèle."""
+    """Extrait et parse le premier objet JSON trouvé dans une réponse du modèle."""
     text = text.strip()
 
-    # Tentative directe.
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
@@ -110,11 +114,9 @@ def extract_json_object(text: str) -> dict[str, Any]:
     except Exception:
         pass
 
-    # Retire les blocs Markdown éventuels.
     text = re.sub(r"^```(?:json)?", "", text.strip(), flags=re.IGNORECASE)
     text = re.sub(r"```$", "", text.strip())
 
-    # Recherche du premier objet JSON.
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if match:
         candidate = match.group(0)
@@ -128,23 +130,39 @@ def extract_json_object(text: str) -> dict[str, Any]:
     return {}
 
 
-def normalize_invoice_result(parsed: dict[str, Any], raw_response: str) -> dict[str, str]:
-    """Normalise les champs attendus."""
-    result: dict[str, str] = {}
-    for field in DEFAULT_INVOICE_FIELDS:
-        value = parsed.get(field, "Non trouvé") if isinstance(parsed, dict) else "Non trouvé"
-        if value is None or str(value).strip() == "":
-            value = "Non trouvé"
-        result[field] = str(value).strip()
+def calculate_confidence_score(parsed: dict[str, Any], raw_text: str) -> float:
+    """Calcule un indice de fiabilité (%) de l'extraction par vérification et regex."""
+    if not parsed or not isinstance(parsed, dict):
+        return 0.0
 
-    # Si le JSON n'a pas pu être parsé, on conserve la réponse brute pour diagnostic.
-    if not parsed:
-        result["commentaire"] = f"Réponse brute non parsée : {raw_response[:500]}"
-    return result
+    total_keys = len(parsed)
+    if total_keys == 0:
+        return 0.0
+
+    found_count = 0
+    regex_bonus = 0.0
+
+    for k, v in parsed.items():
+        val_str = str(v).strip()
+        if val_str and val_str.lower() not in {"non trouvé", "inconnu", "null", "none", ""}:
+            found_count += 1
+            if re.search(r"\d+([.,]\d{1,2})?\s*(€|EUR|\$|USD|XAF|FCFA|Ar|Ariary|MGA|FMG)?", val_str, re.IGNORECASE):
+                regex_bonus += 0.05
+            if re.search(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", val_str):
+                regex_bonus += 0.05
+
+    base_score = (found_count / total_keys) * 85.0
+    final_score = min(round(base_score + (regex_bonus * 100), 1), 100.0)
+    return final_score
 
 
-def extract_invoice_fields_for_document(source: str, max_context_chars: int = 12000) -> dict[str, Any]:
-    """Extrait les champs d'une facture pour un document précis."""
+def extract_invoice_fields_for_document(
+    source: str,
+    fields: list[str] | None = None,
+    mode: str = "custom",
+    max_context_chars: int = 12000,
+) -> dict[str, Any]:
+    """Extrait les champs d'une facture précise selon le mode choisi (custom ou auto-découverte)."""
     chunks = get_chunks_by_source(source)
     selected_chunks = limit_chunks_by_context_size(chunks, max_chars=max_context_chars)
 
@@ -155,13 +173,32 @@ def extract_invoice_fields_for_document(source: str, max_context_chars: int = 12
     }
 
     if not selected_chunks:
-        return {**base_row, **{field: "Non trouvé" for field in DEFAULT_INVOICE_FIELDS}}
+        if fields:
+            return {**base_row, **{f: "Non trouvé" for f in fields}, "indice_fiabilite_%": 0.0}
+        return {**base_row, "commentaire": "Aucun texte indexé", "indice_fiabilite_%": 0.0}
 
     context = format_context(selected_chunks)
-    prompt = build_invoice_extraction_prompt(context)
+
+    if mode == "universal" or not fields:
+        prompt = build_universal_extraction_prompt(context)
+    else:
+        prompt = build_custom_extraction_prompt(fields, context)
+
     raw_answer = generate_answer(prompt=prompt, context=context)
     parsed = extract_json_object(raw_answer)
-    normalized = normalize_invoice_result(parsed, raw_answer)
+    confidence = calculate_confidence_score(parsed, raw_answer)
+
+    normalized: dict[str, Any] = {}
+    if fields and mode != "universal":
+        for field in fields:
+            val = parsed.get(field, "Non trouvé") if isinstance(parsed, dict) else "Non trouvé"
+            normalized[field] = str(val).strip() if str(val).strip() else "Non trouvé"
+    else:
+        if isinstance(parsed, dict) and parsed:
+            for k, v in parsed.items():
+                normalized[str(k).strip()] = str(v).strip()
+        else:
+            normalized["réponse_brute"] = raw_answer[:300]
 
     pages = sorted({
         chunk.get("metadata", {}).get("page")
@@ -172,53 +209,51 @@ def extract_invoice_fields_for_document(source: str, max_context_chars: int = 12
     return {
         **base_row,
         **normalized,
+        "indice_fiabilite_%": confidence,
         "pages_utilisees": "; ".join(str(page) for page in pages),
     }
 
 
 def extract_invoice_fields_for_all_documents(
     selected_sources: list[str] | None = None,
+    fields: list[str] | None = None,
+    mode: str = "custom",
     max_context_chars: int = 12000,
 ) -> pd.DataFrame:
-    """Extrait les champs de facture pour tous les documents sélectionnés."""
+    """Extrait les champs de facture pour tous les documents sélectionnés et harmonise les colonnes."""
     documents = list_indexed_documents()
     if selected_sources:
         selected = set(selected_sources)
         documents = [doc for doc in documents if doc["filename"] in selected]
 
     rows = []
+    target_fields = fields if (fields and mode != "universal") else DEFAULT_INVOICE_FIELDS
+
     for document in documents:
         rows.append(
             extract_invoice_fields_for_document(
                 source=document["filename"],
+                fields=target_fields,
+                mode=mode,
                 max_context_chars=max_context_chars,
             )
         )
 
-    columns = [
-        "document",
-        "destinataire_nom",
-        "destinataire_adresse",
-        "emetteur_nom",
-        "numero_facture",
-        "date_facture",
-        "montant_ht",
-        "montant_tva",
-        "montant_ttc",
-        "devise",
-        "commentaire",
-        "pages_utilisees",
-        "nombre_chunks_utilises",
-    ]
-    return pd.DataFrame(rows, columns=columns)
+    df = pd.DataFrame(rows)
+    first_cols = ["document", "indice_fiabilite_%"]
+    existing_first = [c for c in first_cols if c in df.columns]
+    other_cols = [c for c in df.columns if c not in existing_first]
+    return df[existing_first + other_cols]
 
 
 def export_invoice_fields_to_excel(
     selected_sources: list[str] | None = None,
+    fields: list[str] | None = None,
+    mode: str = "custom",
     output_path: str | Path | None = None,
     max_context_chars: int = 12000,
 ) -> Path:
-    """Exporte les champs de factures dans un fichier Excel."""
+    """Exporte les champs de factures (standards, custom ou auto-découverts) dans un fichier Excel."""
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = Path("data") / "exports" / f"extraction_factures_{timestamp}.xlsx"
@@ -228,6 +263,8 @@ def export_invoice_fields_to_excel(
 
     results_df = extract_invoice_fields_for_all_documents(
         selected_sources=selected_sources,
+        fields=fields,
+        mode=mode,
         max_context_chars=max_context_chars,
     )
 
@@ -235,8 +272,9 @@ def export_invoice_fields_to_excel(
         [
             {"champ": "date_export", "valeur": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
             {"champ": "nombre_documents", "valeur": len(results_df)},
+            {"champ": "mode_extraction", "valeur": mode},
             {"champ": "max_context_chars", "valeur": max_context_chars},
-            {"champ": "description", "valeur": "Extraction structurée de champs de factures depuis les documents indexés."},
+            {"champ": "description", "valeur": "Extraction structurée bilingue Français/Malagasy."},
         ]
     )
 

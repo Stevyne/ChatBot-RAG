@@ -1,7 +1,7 @@
 """Génération de réponses à partir du contexte récupéré.
 
 Ce module contient le prompt principal du chatbot. Il est volontairement strict
-pour limiter les hallucinations dans un contexte juridique et administratif.
+et bilingue (Français & Malagasy) pour limiter les hallucinations dans un contexte juridique et administratif.
 """
 from __future__ import annotations
 
@@ -13,21 +13,20 @@ import requests
 
 from .config import LLM_PROVIDER, OLLAMA_MODEL, OLLAMA_URL, OPENAI_API_KEY, OPENAI_MODEL
 
-SYSTEM_INSTRUCTIONS = """Tu es un assistant documentaire spécialisé dans l'analyse de documents juridiques et administratifs.
+SYSTEM_INSTRUCTIONS = """Tu es un assistant documentaire spécialisé dans l'analyse de documents juridiques et administratifs en Français et en Malagasy (Malgache).
 
 Ton rôle : aider l'utilisateur à comprendre les documents fournis, sans inventer d'information.
 
 Règles obligatoires :
 1. Réponds uniquement à partir du contexte documentaire fourni.
 2. N'utilise pas tes connaissances générales si elles ne sont pas confirmées par le contexte.
-3. Si le contexte ne contient pas l'information demandée, réponds exactement : "Je ne trouve pas cette information dans les documents fournis."
-4. Ne donne jamais de conseil juridique personnalisé, de stratégie juridique ou de décision à la place d'un professionnel.
-5. Si la question nécessite une interprétation juridique personnalisée, indique que les documents permettent seulement une information générale.
-6. Réponds en français clair, avec des phrases simples.
+3. Si le contexte ne contient pas l'information demandée, réponds exactement : "Je ne trouve pas cette information dans les documents fournis." (ou en malagasy : "Tsy hita ao amin'ny tahirin-kevitra io fanazavana io.").
+4. Adaptabilité linguistique : Si la question est posée en malagasy, réponds en malagasy. Si la question est posée en français, réponds en français.
+5. Comprends parfaitement le vocabulaire administratif, juridique et financier de Madagascar (ex: Ariary / MGA / Ar, Faktiora, Daty, Anarana, Mpanjifa, Tompony, Fokontany, Kaominina, Faritra, NIF, STAT, CIF, CSB...).
+6. Ne donne jamais de conseil juridique personnalisé à la place d'un professionnel.
 7. Structure la réponse avec des puces lorsque c'est utile.
 8. Cite les sources sous la forme : document, page.
-9. Ne cite une source que si elle apparaît dans le contexte fourni.
-10. Ne mentionne pas des articles, lois, délais, conditions ou montants absents du contexte.
+9. Ne mentionne pas des articles, lois ou délais absents du contexte.
 """
 
 
@@ -44,7 +43,7 @@ Question de l'utilisateur :
 {question}
 
 Format attendu de la réponse :
-1. Réponse courte et directe.
+1. Réponse courte et directe dans la langue de la question (Français ou Malagasy).
 2. Détails utiles sous forme de puces si nécessaire.
 3. Sources utilisées, sous la forme :
    - Nom du document, page X
@@ -67,7 +66,7 @@ def generate_answer(prompt: str, context: str = "") -> str:
 
 
 def generate_with_ollama(prompt: str) -> str:
-    """Appelle un modèle local via Ollama."""
+    """Appelle un modèle local via Ollama avec des paramètres légers pour économiser la RAM."""
     payload = {
         "model": OLLAMA_MODEL,
         "prompt": prompt,
@@ -126,10 +125,10 @@ def post_process_answer(answer: str) -> str:
     if not answer:
         return "Je ne trouve pas cette information dans les documents fournis."
 
-    # Supprime certaines introductions fréquentes et inutiles.
     unwanted_prefixes = [
         "Réponse :",
         "Voici la réponse :",
+        "Valiny :",
         "D'après le contexte documentaire fourni,",
         "Selon le contexte documentaire fourni,",
     ]
@@ -137,18 +136,12 @@ def post_process_answer(answer: str) -> str:
         if answer.lower().startswith(prefix.lower()):
             answer = answer[len(prefix):].strip()
 
-    # Limite les doubles sauts de ligne excessifs.
     answer = re.sub(r"\n{3,}", "\n\n", answer)
     return answer
 
 
 def generate_extractive_answer(context: str) -> str:
-    """
-    Générateur de secours sans LLM.
-
-    Il ne reformule pas vraiment : il retourne les passages les plus pertinents.
-    C'est utile pour tester toute la chaîne RAG sans clé API ni modèle local.
-    """
+    """Générateur de secours sans LLM."""
     if not context.strip():
         return "Je ne trouve pas cette information dans les documents fournis."
 
@@ -161,6 +154,6 @@ def generate_extractive_answer(context: str) -> str:
 
     return (
         "Mode extractif activé : aucun modèle génératif n'est configuré. "
-        "Voici les passages les plus pertinents trouvés dans les documents :\n\n- "
+        "Voici les passages les plus pertinents trouvés dans les documents (Français/Malagasy) :\n\n- "
         + "\n- ".join(selected)
     )
